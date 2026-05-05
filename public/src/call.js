@@ -1,8 +1,27 @@
 (function () {
   "use strict";
 
-  if (window.__cpHarmonyPeerCallInitedV4) return;
-  window.__cpHarmonyPeerCallInitedV4 = true;
+  var CP_HARMONY_CALL_VERSION = "1.1.3-rescue";
+
+  /*
+   * Do not use the old V4 guard as a hard stop.
+   * Some failed/old builds set window.__cpHarmonyPeerCallInitedV4 before
+   * window.CPHarmonyCall is created, then newer bundles silently return.
+   */
+  if (window.CPHarmonyCall && window.CPHarmonyCall.__version === CP_HARMONY_CALL_VERSION) {
+    return;
+  }
+
+  window.__cpHarmonyPeerCallInitedV5 = true;
+
+  var earlyQueue = [];
+  window.CPHarmonyCall = window.CPHarmonyCall || {
+    __version: CP_HARMONY_CALL_VERSION,
+    __early: true,
+    refresh: function () { earlyQueue.push(["refresh"]); return false; },
+    start: function (mode) { earlyQueue.push(["start", mode]); return Promise.resolve(false); },
+    end: function () { earlyQueue.push(["end"]); return false; }
+  };
 
   var SIGNAL_PREFIX = "__cp_harmony_call__:";
   var CALL_PROTOCOL = "cp-harmony-peer-call-v4";
@@ -46,8 +65,8 @@
     call: "通话",
     audioCall: "语音通话",
     videoCall: "视频通话",
-    friend: t("friend", "好友"),
-    me: t("me", "我"),
+    friend: "好友",
+    me: "我",
     connecting: "连接中...",
     connected: "已接通",
     incomingAudio: "邀请你语音通话",
@@ -60,33 +79,33 @@
     reject: "拒绝",
     accept: "接听",
     currentCallExists: "当前已有通话",
-    enterPrivateChat: t("enterPrivateChat", "请先进入私聊窗口"),
-    unsupported: t("unsupported", "当前浏览器不支持音视频通话"),
-    permissionDenied: t("permissionDenied", "请允许麦克风/摄像头权限后再通话"),
-    cameraFallback: t("cameraFallback", "摄像头不可用，已切换语音"),
-    signalingDisconnected: t("signalingDisconnected", "通话信令断开，已结束"),
-    callFailed: t("callFailed", "通话连接失败"),
-    connectTimeout: t("connectTimeout", "连接超时"),
-    noAnswer: t("noAnswer", "对方无应答"),
+    enterPrivateChat: "请先进入私聊窗口",
+    unsupported: "当前浏览器不支持音视频通话",
+    permissionDenied: "请允许麦克风/摄像头权限后再通话",
+    cameraFallback: "摄像头不可用，已切换语音",
+    signalingDisconnected: "通话信令断开，已结束",
+    callFailed: "通话连接失败",
+    connectTimeout: "连接超时",
+    noAnswer: "对方无应答",
     preparingAudio: "准备语音通话...",
     preparingVideo: "准备视频通话...",
     callingAudio: "语音呼叫中...",
     callingVideo: "视频呼叫中...",
     acceptedConnecting: "对方已接听，连接中...",
-    rejected: t("rejected", "对方已拒绝"),
-    busy: t("busy", "对方忙线中"),
-    startFailed: t("startFailed", "发起通话失败"),
-    acceptFailed: t("acceptFailed", "接听失败"),
-    missingPeerId: t("missingPeerId", "缺少对方 Peer ID"),
-    missingPeerUid: t("missingPeerUid", "缺少对方 UID"),
-    noUid: t("noUid", "没有获取到当前用户 UID"),
-    noToken: t("noToken", "没有获取到悟空 IM token")
+    rejected: "对方已拒绝",
+    busy: "对方忙线中",
+    startFailed: "发起通话失败",
+    acceptFailed: "接听失败",
+    missingPeerId: "缺少对方 Peer ID",
+    missingPeerUid: "缺少对方 UID",
+    noUid: "没有获取到当前用户 UID",
+    noToken: "没有获取到悟空 IM token"
   };
 
   var Labels = Object.assign({}, DefaultLabels, UserConfig.labels || {});
 
   function t(key, fallback) {
-    return Labels[key] || fallback || key;
+    return (Labels && Labels[key]) || fallback || key;
   }
 
   function applyConfig(cfg) {
@@ -100,6 +119,29 @@
     CALL_TIMEOUT_MS = Number(UserConfig.callTimeoutMs || CALL_TIMEOUT_MS);
     CONNECT_TIMEOUT_MS = Number(UserConfig.connectTimeoutMs || CONNECT_TIMEOUT_MS);
     SIGNAL_TTL_MS = Number(UserConfig.signalTtlMs || SIGNAL_TTL_MS);
+  }
+
+  function getUserLang() {
+    return String(
+      (window.config && (window.config.userLang || window.config.defaultLang)) ||
+      (window.app && window.app.user && (window.app.user.userLang || window.app.user.lang || window.app.user.language)) ||
+      document.documentElement.getAttribute("lang") ||
+      navigator.language ||
+      "zh-CN"
+    );
+  }
+
+  function fetchServerConfig() {
+    var rel = (window.config && window.config.relative_path) || "";
+    var url = rel + "/api/plugins/cp-harmony-call/config?lang=" + encodeURIComponent(getUserLang());
+
+    return fetch(url, {
+      credentials: "same-origin",
+      headers: { accept: "application/json" }
+    }).then(function (res) {
+      if (!res.ok) throw new Error("config http " + res.status);
+      return res.json();
+    });
   }
 
   if (UserConfig.enabled === false) return;
@@ -1585,14 +1627,36 @@
     byId("cp-call-reject").addEventListener("click", rejectCall);
   }
 
+  function findChatHeader() {
+    return (
+      document.querySelector("#cp-chat-root .cp-header") ||
+      document.querySelector("#cp-chat-root header") ||
+      document.querySelector('[component="chat/header"]') ||
+      document.querySelector('[component="chat/main-wrapper"] .chat-header') ||
+      document.querySelector('.chat-modal .modal-header') ||
+      document.querySelector('.chats-full .chat-header')
+    );
+  }
+
+  function findHeaderActions(header) {
+    if (!header) return null;
+    return (
+      header.querySelector('.cp-header-actions') ||
+      header.querySelector('.chat-actions') ||
+      header.querySelector('[component="chat/header/actions"]') ||
+      header.querySelector('.modal-header .btn-group') ||
+      header.lastElementChild
+    );
+  }
+
   function injectHeaderButton() {
     if (UserConfig.showButton === false || !isChatContext()) return;
     injectStyle();
 
-    var header = document.querySelector("#cp-chat-root .cp-header");
-    var actions = document.querySelector("#cp-chat-root .cp-header-actions");
+    var header = findChatHeader();
+    if (!header) return;
 
-    if (!header || !actions) return;
+    var actions = findHeaderActions(header);
 
     var existing = byId("cp-harmony-call-slot");
     if (existing && existing.parentNode === header) return;
@@ -1620,7 +1684,11 @@
         videoButton +
       '</div>';
 
-    header.insertBefore(slot, actions);
+    if (actions && actions.parentNode === header) {
+      header.insertBefore(slot, actions);
+    } else {
+      header.appendChild(slot);
+    }
 
     var entry = byId("cp-harmony-call-entry");
     var pop = byId("cp-harmony-call-pop");
@@ -1704,8 +1772,36 @@
     State.started = false;
   }
 
+  function ensureDomObserver() {
+    if (State.domObserver || !document.body || !window.MutationObserver) return;
+
+    State.domObserver = new MutationObserver(function () {
+      clearTimeout(State.injectTimer);
+
+      State.injectTimer = setTimeout(function () {
+        boot();
+      }, 80);
+    });
+
+    State.domObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
   function boot() {
-    if (!isChatContext()) return;
+    if (!document.body) {
+      setTimeout(boot, 80);
+      return;
+    }
+
+    ensureDomObserver();
+
+    if (!isChatContext()) {
+      var slot = byId("cp-harmony-call-slot");
+      if (slot && slot.parentNode) slot.parentNode.removeChild(slot);
+      return;
+    }
 
     if (State.started) {
       injectHeaderButton();
@@ -1722,22 +1818,6 @@
 
     if (UserConfig.autoConnectWukong !== false) {
       ensureWukong().catch(noop);
-    }
-
-    if (!State.domObserver) {
-      State.domObserver = new MutationObserver(function () {
-        clearTimeout(State.injectTimer);
-
-        State.injectTimer = setTimeout(function () {
-          injectHeaderButton();
-          hideSignalMessagesInDom();
-        }, 80);
-      });
-
-      State.domObserver.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
     }
 
     if (!window.__cpHarmonyCallBeforeUnloadBoundV4) {
@@ -1766,6 +1846,7 @@
   }
 
   window.CPHarmonyCall = {
+    __version: CP_HARMONY_CALL_VERSION,
     boot: boot,
     setConfig: function (cfg) {
       applyConfig(cfg || {});
@@ -1795,9 +1876,38 @@
     config: UserConfig
   };
 
+  function flushEarlyQueue() {
+    if (!earlyQueue || !earlyQueue.length) return;
+    var queued = earlyQueue.slice();
+    earlyQueue.length = 0;
+    queued.forEach(function (item) {
+      if (!item || !item[0]) return;
+      if (item[0] === "refresh") window.CPHarmonyCall.refresh();
+      if (item[0] === "start") window.CPHarmonyCall.start(item[1] || "audio").catch(noop);
+      if (item[0] === "end") window.CPHarmonyCall.end();
+    });
+  }
+
+  function startRuntime() {
+    fetchServerConfig().then(function (cfg) {
+      applyConfig(cfg || {});
+      window.CPHarmonyCallConfig = Object.assign({}, UserConfig);
+      if (UserConfig.enabled === false) {
+        destroy();
+        return;
+      }
+      boot();
+      flushEarlyQueue();
+    }).catch(function (err) {
+      warn("config", err);
+      boot();
+      flushEarlyQueue();
+    });
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
+    document.addEventListener("DOMContentLoaded", startRuntime);
   } else {
-    boot();
+    startRuntime();
   }
 })();
