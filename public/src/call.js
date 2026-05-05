@@ -42,15 +42,69 @@
     iceServers: null
   }, window.CPHarmonyCallConfig || {});
 
+  var DefaultLabels = {
+    call: "通话",
+    audioCall: "语音通话",
+    videoCall: "视频通话",
+    friend: t("friend", "好友"),
+    me: t("me", "我"),
+    connecting: "连接中...",
+    connected: "已接通",
+    incomingAudio: "邀请你语音通话",
+    incomingVideo: "邀请你视频通话",
+    incomingCall: "邀请你通话",
+    microphone: "麦克风",
+    muted: "静音",
+    camera: "摄像头",
+    cameraOff: "关闭",
+    reject: "拒绝",
+    accept: "接听",
+    currentCallExists: "当前已有通话",
+    enterPrivateChat: t("enterPrivateChat", "请先进入私聊窗口"),
+    unsupported: t("unsupported", "当前浏览器不支持音视频通话"),
+    permissionDenied: t("permissionDenied", "请允许麦克风/摄像头权限后再通话"),
+    cameraFallback: t("cameraFallback", "摄像头不可用，已切换语音"),
+    signalingDisconnected: t("signalingDisconnected", "通话信令断开，已结束"),
+    callFailed: t("callFailed", "通话连接失败"),
+    connectTimeout: t("connectTimeout", "连接超时"),
+    noAnswer: t("noAnswer", "对方无应答"),
+    preparingAudio: "准备语音通话...",
+    preparingVideo: "准备视频通话...",
+    callingAudio: "语音呼叫中...",
+    callingVideo: "视频呼叫中...",
+    acceptedConnecting: "对方已接听，连接中...",
+    rejected: t("rejected", "对方已拒绝"),
+    busy: t("busy", "对方忙线中"),
+    startFailed: t("startFailed", "发起通话失败"),
+    acceptFailed: t("acceptFailed", "接听失败"),
+    missingPeerId: t("missingPeerId", "缺少对方 Peer ID"),
+    missingPeerUid: t("missingPeerUid", "缺少对方 UID"),
+    noUid: t("noUid", "没有获取到当前用户 UID"),
+    noToken: t("noToken", "没有获取到悟空 IM token")
+  };
+
+  var Labels = Object.assign({}, DefaultLabels, UserConfig.labels || {});
+
+  function t(key, fallback) {
+    return Labels[key] || fallback || key;
+  }
+
+  function applyConfig(cfg) {
+    UserConfig = Object.assign(UserConfig || {}, cfg || {});
+    Labels = Object.assign({}, DefaultLabels, UserConfig.labels || {});
+
+    SIGNAL_PREFIX = UserConfig.signalPrefix || SIGNAL_PREFIX;
+    CALL_PROTOCOL = UserConfig.protocol || CALL_PROTOCOL;
+    PEERJS_CDN = UserConfig.peerjsUrl || PEERJS_CDN;
+    WK_SDK_CDN = UserConfig.wkSdkUrl || WK_SDK_CDN;
+    CALL_TIMEOUT_MS = Number(UserConfig.callTimeoutMs || CALL_TIMEOUT_MS);
+    CONNECT_TIMEOUT_MS = Number(UserConfig.connectTimeoutMs || CONNECT_TIMEOUT_MS);
+    SIGNAL_TTL_MS = Number(UserConfig.signalTtlMs || SIGNAL_TTL_MS);
+  }
+
   if (UserConfig.enabled === false) return;
 
-  SIGNAL_PREFIX = UserConfig.signalPrefix || SIGNAL_PREFIX;
-  CALL_PROTOCOL = UserConfig.protocol || CALL_PROTOCOL;
-  PEERJS_CDN = UserConfig.peerjsUrl || PEERJS_CDN;
-  WK_SDK_CDN = UserConfig.wkSdkUrl || WK_SDK_CDN;
-  CALL_TIMEOUT_MS = Number(UserConfig.callTimeoutMs || CALL_TIMEOUT_MS);
-  CONNECT_TIMEOUT_MS = Number(UserConfig.connectTimeoutMs || CONNECT_TIMEOUT_MS);
-  SIGNAL_TTL_MS = Number(UserConfig.signalTtlMs || SIGNAL_TTL_MS);
+  applyConfig(UserConfig);
 
   var State = {
     wkReady: false,
@@ -77,7 +131,7 @@
 
     remoteUser: {
       uid: "",
-      name: "好友",
+      name: t("friend", "好友"),
       avatar: ""
     },
 
@@ -151,7 +205,7 @@
   function myName() {
     return String(
       (window.app && window.app.user && window.app.user.username) ||
-      "我"
+      t("me", "我")
     );
   }
 
@@ -608,8 +662,8 @@
       State.wkToken = String(tokenData.token || "");
       State.wkAddr = UserConfig.wkAddr || ((location.protocol === "https:" ? "wss://" : "ws://") + location.host + (UserConfig.wkWsPath || "/wkws/"));
 
-      if (!State.myUid) throw new Error("没有获取到当前用户 UID");
-      if (!State.wkToken) throw new Error("没有获取到悟空 IM token");
+      if (!State.myUid) throw new Error(t("noUid", "没有获取到当前用户 UID"));
+      if (!State.wkToken) throw new Error(t("noToken", "没有获取到悟空 IM token"));
 
       var sdk = window.wk.WKSDK.shared();
 
@@ -656,7 +710,7 @@
     return ensureWukong().then(function () {
       var toUid = packet.to || State.remoteUser.uid;
 
-      if (!toUid) throw new Error("缺少对方 UID");
+      if (!toUid) throw new Error(t("missingPeerUid", "缺少对方 UID"));
       if (!window.wk || !window.wk.WKSDK) throw new Error("悟空 IM 不可用");
 
       packet = normalizeOutgoingSignal(packet);
@@ -753,7 +807,7 @@
           getMedia(State.mode).then(function (stream) {
             call.answer(stream);
             bindMediaCall(call);
-            setStatus("连接中...");
+            setStatus(t("connecting", "连接中..."));
             startConnectGuard();
           }).catch(function (err) {
             warn("answer-media", err);
@@ -764,7 +818,7 @@
 
         State.peer.on("disconnected", function () {
           if (State.callId) {
-            showToast("通话信令断开，已结束");
+            showToast(t("signalingDisconnected", "通话信令断开，已结束"));
             endCall(false);
           } else {
             resetPeer();
@@ -780,7 +834,7 @@
           }
 
           if (State.callId && !State.connected) {
-            showToast("通话连接失败");
+            showToast(t("callFailed", "通话连接失败"));
             endCall(false);
           }
         });
@@ -797,7 +851,7 @@
     if (State.localStream) return State.localStream;
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error("当前浏览器不支持音视频通话");
+      throw new Error(t("unsupported", "当前浏览器不支持音视频通话"));
     }
 
     var wantsVideo = mode === "video";
@@ -818,7 +872,7 @@
       });
     } catch (err) {
       if (err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError")) {
-        throw new Error("请允许麦克风/摄像头权限后再通话");
+        throw new Error(t("permissionDenied", "请允许麦克风/摄像头权限后再通话"));
       }
 
       if (wantsVideo) {
@@ -831,7 +885,7 @@
           },
           video: false
         });
-        showToast("摄像头不可用，已切换语音");
+        showToast(t("cameraFallback", "摄像头不可用，已切换语音"));
       } else {
         throw err;
       }
@@ -909,7 +963,7 @@
     clearTimeout(State.connectTimer);
     State.connectTimer = setTimeout(function () {
       if (State.callId && !State.connected) {
-        showToast("连接超时");
+        showToast(t("connectTimeout", "连接超时"));
         endCall(false);
       }
     }, CONNECT_TIMEOUT_MS);
@@ -989,7 +1043,7 @@
       }
     }
 
-    return State.remoteUser.name || "好友";
+    return State.remoteUser.name || t("friend", "好友");
   }
 
   function getPeerAvatar() {
@@ -1012,7 +1066,7 @@
   }
 
   function setRemoteInfo() {
-    var name = State.remoteUser.name || "好友";
+    var name = State.remoteUser.name || t("friend", "好友");
     var avatar = State.remoteUser.avatar || "";
 
     var nameEl = byId("cp-call-name");
@@ -1127,7 +1181,7 @@
     State.connected = false;
     State.incomingInvite = null;
     State.remoteUser.uid = "";
-    State.remoteUser.name = "好友";
+    State.remoteUser.name = t("friend", "好友");
     State.remoteUser.avatar = "";
 
     State.sec = 0;
@@ -1171,7 +1225,7 @@
     var peerUid = getPeerUid();
 
     if (!peerUid) {
-      showToast("请先进入私聊窗口");
+      showToast(t("enterPrivateChat", "请先进入私聊窗口"));
       return;
     }
 
@@ -1189,7 +1243,7 @@
 
     showMainUI();
     setMainConnectedMode();
-    setStatus(State.mode === "video" ? "准备视频通话..." : "准备语音通话...");
+    setStatus(State.mode === "video" ? t("preparingVideo", "准备视频通话...") : t("preparingAudio", "准备语音通话..."));
 
     try {
       // Important: get media before invite, so a permission failure will not make the other side ring.
@@ -1205,7 +1259,7 @@
         peerId: peerId
       });
 
-      setStatus(State.mode === "video" ? "视频呼叫中..." : "语音呼叫中...");
+      setStatus(State.mode === "video" ? t("callingVideo", "视频呼叫中...") : t("callingAudio", "语音呼叫中..."));
       playOutgoingRing();
     } catch (err) {
       var failedCallId = State.callId;
@@ -1218,7 +1272,7 @@
     clearTimeout(State.timeoutTimer);
     State.timeoutTimer = setTimeout(function () {
       if (State.callId && !State.connected) {
-        showToast("对方无应答");
+        showToast(t("noAnswer", "对方无应答"));
         endCall(false);
       }
     }, CALL_TIMEOUT_MS);
@@ -1230,7 +1284,7 @@
     var invite = State.incomingInvite;
 
     if (!invite.peerId) {
-      throw new Error("缺少对方 Peer ID");
+      throw new Error(t("missingPeerId", "缺少对方 Peer ID"));
     }
 
     stopRing();
@@ -1244,7 +1298,7 @@
 
     showMainUI();
     setMainConnectedMode();
-    setStatus("连接中...");
+    setStatus(t("connecting", "连接中..."));
 
     var stream = await getMedia(State.mode);
 
@@ -1268,7 +1322,7 @@
     clearTimeout(State.timeoutTimer);
     State.timeoutTimer = setTimeout(function () {
       if (State.callId && !State.connected) {
-        showToast("连接超时");
+        showToast(t("connectTimeout", "连接超时"));
         endCall(false);
       }
     }, CONNECT_TIMEOUT_MS);
@@ -1325,7 +1379,7 @@
       State.incomingInvite = packet;
 
       State.remoteUser.uid = String(packet.from || "");
-      State.remoteUser.name = packet.fromName || "好友";
+      State.remoteUser.name = packet.fromName || t("friend", "好友");
       State.remoteUser.avatar = packet.fromAvatar || "";
 
       showIncomingUI(packet);
@@ -1348,19 +1402,19 @@
     if (packet.type === "accept") {
       clearTimeout(State.timeoutTimer);
       stopRing();
-      setStatus("对方已接听，连接中...");
+      setStatus(t("acceptedConnecting", "对方已接听，连接中..."));
       startConnectGuard();
       return;
     }
 
     if (packet.type === "reject") {
-      showToast("对方已拒绝");
+      showToast(t("rejected", "对方已拒绝"));
       endCall(true);
       return;
     }
 
     if (packet.type === "busy") {
-      showToast("对方忙线中");
+      showToast(t("busy", "对方忙线中"));
       endCall(true);
       return;
     }
@@ -1401,16 +1455,16 @@
     if (mic) {
       mic.classList.toggle("off", !State.isMicOn);
       mic.innerHTML = State.isMicOn
-        ? '<i class="fa fa-microphone"></i><span>麦克风</span>'
-        : '<i class="fa fa-microphone-slash"></i><span>静音</span>';
+        ? '<i class="fa fa-microphone"></i><span>' + t("microphone", "麦克风") + '</span>'
+        : '<i class="fa fa-microphone-slash"></i><span>' + t("muted", "静音") + '</span>';
     }
 
     if (cam) {
       cam.style.display = State.mode === "video" ? "inline-flex" : "none";
       cam.classList.toggle("off", !State.isCamOn);
       cam.innerHTML = State.isCamOn
-        ? '<i class="fa fa-video-camera"></i><span>摄像头</span>'
-        : '<i class="fa fa-video-camera"></i><span>关闭</span>';
+        ? '<i class="fa fa-video-camera"></i><span>' + t("camera", "摄像头") + '</span>'
+        : '<i class="fa fa-video-camera"></i><span>' + t("cameraOff", "关闭") + '</span>';
     }
   }
 
@@ -1489,25 +1543,25 @@
         '<audio id="cp-call-remote-audio" autoplay></audio>' +
         '<div id="cp-call-top">' +
           '<img id="cp-call-avatar" src="" alt="">' +
-          '<div id="cp-call-name">好友</div>' +
-          '<div id="cp-call-status">连接中...</div>' +
+          '<div id="cp-call-name">' + t("friend", "好友") + '</div>' +
+          '<div id="cp-call-status">' + t("connecting", "连接中...") + '</div>' +
         '</div>' +
         '<div id="cp-call-local-wrap">' +
           '<video id="cp-call-local-video" autoplay muted playsinline></video>' +
         '</div>' +
         '<div id="cp-call-controls">' +
-          '<button type="button" class="cp-call-control" id="cp-call-btn-mic"><i class="fa fa-microphone"></i><span>麦克风</span></button>' +
+          '<button type="button" class="cp-call-control" id="cp-call-btn-mic"><i class="fa fa-microphone"></i><span>' + t("microphone", "麦克风") + '</span></button>' +
           '<button type="button" class="cp-call-control danger" id="cp-call-btn-end"><i class="fa fa-phone fa-rotate-135"></i></button>' +
-          '<button type="button" class="cp-call-control" id="cp-call-btn-cam"><i class="fa fa-video-camera"></i><span>摄像头</span></button>' +
+          '<button type="button" class="cp-call-control" id="cp-call-btn-cam"><i class="fa fa-video-camera"></i><span>' + t("camera", "摄像头") + '</span></button>' +
         '</div>' +
       '</div>' +
       '<div id="cp-call-incoming">' +
         '<img id="cp-call-in-avatar" src="" alt="">' +
-        '<div id="cp-call-in-name">好友</div>' +
-        '<div id="cp-call-in-tip">邀请你通话</div>' +
+        '<div id="cp-call-in-name">' + t("friend", "好友") + '</div>' +
+        '<div id="cp-call-in-tip">' + t("incomingCall", "邀请你通话") + '</div>' +
         '<div id="cp-call-in-actions">' +
-          '<div class="cp-call-in-action" id="cp-call-reject"><div class="cp-call-in-circle red"><i class="fa fa-phone fa-rotate-135"></i></div><div>拒绝</div></div>' +
-          '<div class="cp-call-in-action" id="cp-call-accept"><div class="cp-call-in-circle green"><i class="fa fa-phone"></i></div><div>接听</div></div>' +
+          '<div class="cp-call-in-action" id="cp-call-reject"><div class="cp-call-in-circle red"><i class="fa fa-phone fa-rotate-135"></i></div><div>' + t("reject", "拒绝") + '</div></div>' +
+          '<div class="cp-call-in-action" id="cp-call-accept"><div class="cp-call-in-circle green"><i class="fa fa-phone"></i></div><div>' + t("accept", "接听") + '</div></div>' +
         '</div>' +
       '</div>';
 
@@ -1523,7 +1577,7 @@
     byId("cp-call-accept").addEventListener("click", function () {
       acceptCall().catch(function (err) {
         warn("accept", err);
-        showToast(err && err.message ? err.message : "接听失败");
+        showToast(err && err.message ? err.message : t("acceptFailed", "接听失败"));
         endCall(true);
       });
     });
@@ -1551,17 +1605,17 @@
     var videoButton = UserConfig.enableVideo === false ? "" :
       '<button type="button" data-mode="video">' +
         '<span class="cp-harmony-call-pop-icon video"><i class="fa fa-video-camera"></i></span>' +
-        '<span class="cp-harmony-call-pop-main"><b>视频通话</b></span>' +
+        '<span class="cp-harmony-call-pop-main"><b>' + t("videoCall", "视频通话") + '</b></span>' +
       '</button>';
 
     slot.innerHTML =
-      '<button type="button" class="cp-harmony-call-entry" id="cp-harmony-call-entry" aria-label="通话" title="通话">' +
+      '<button type="button" class="cp-harmony-call-entry" id="cp-harmony-call-entry" aria-label="' + t("call", "通话") + '" title="' + t("call", "通话") + '">' +
         '<i class="fa fa-phone"></i>' +
       '</button>' +
       '<div class="cp-harmony-call-pop" id="cp-harmony-call-pop" hidden>' +
         '<button type="button" data-mode="audio">' +
           '<span class="cp-harmony-call-pop-icon audio"><i class="fa fa-phone"></i></span>' +
-          '<span class="cp-harmony-call-pop-main"><b>语音通话</b></span>' +
+          '<span class="cp-harmony-call-pop-main"><b>' + t("audioCall", "语音通话") + '</b></span>' +
         '</button>' +
         videoButton +
       '</div>';
@@ -1591,7 +1645,7 @@
 
       startOutgoingCall(mode).catch(function (err) {
         warn("start-call", err);
-        showToast(err && err.message ? err.message : "发起通话失败");
+        showToast(err && err.message ? err.message : t("startFailed", "发起通话失败"));
         endCall(true);
       });
     });
@@ -1713,6 +1767,12 @@
 
   window.CPHarmonyCall = {
     boot: boot,
+    setConfig: function (cfg) {
+      applyConfig(cfg || {});
+      this.config = UserConfig;
+      syncButtons();
+      setRemoteInfo();
+    },
     refresh: function () {
       injectHeaderButton();
       hideSignalMessagesInDom();
