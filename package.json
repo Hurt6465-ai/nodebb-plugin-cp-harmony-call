@@ -1,15 +1,15 @@
 {
   "name": "nodebb-plugin-cp-harmony-call",
   "version": "1.0.0",
-  "description": "PeerJS 语言视频通话",
+  "description": "nodebb通话插件 videoWebRTC.",
   "main": "library.js",
   "license": "MIT",
   "keywords": [
     "nodebb",
     "nodebb-plugin",
     "chat",
+    "call",
     "webrtc",
-    "peerjs",
     "wukongim"
   ],
   "nbbpm": {
