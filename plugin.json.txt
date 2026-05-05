@@ -1,0 +1,22 @@
+{
+  "id": "nodebb-plugin-cp-harmony-call",
+  "name": "CP Harmony Call",
+  "description": "PeerJS audio/video calls for CP Chat Harmony over Wukong IM signaling.",
+  "url": "https://github.com/Hurt6465-ai/nodebb-plugin-cp-harmony-call",
+  "library": "./library.js",
+  "staticDirs": {
+    "public": "public"
+  },
+  "scripts": [
+    "public/src/client.js"
+  ],
+  "hooks": [
+    {
+      "hook": "static:api.routes",
+      "method": "addApiRoutes"
+    }
+  ],
+  "nbbpm": {
+    "compatibility": "^3.0.0 || ^4.0.0"
+  }
+}
