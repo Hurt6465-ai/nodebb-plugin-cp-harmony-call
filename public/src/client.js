@@ -2,7 +2,7 @@
 
 (function () {
   var PLUGIN_ID = 'nodebb-plugin-cp-harmony-call';
-  var VERSION = '1.1.0';
+  var VERSION = '1.1.1-panel-button-fix';
   var root = window.CPHarmonyCallPlugin = window.CPHarmonyCallPlugin || {};
 
   if (root.loaderStarted) return;
@@ -30,6 +30,11 @@
     return path || '/';
   }
 
+  function isAdminPage() {
+    var path = normalizePath(window.location.pathname || '/');
+    return path.indexOf('/admin') === 0;
+  }
+
   function getUserLang() {
     return String(
       (window.config && (config.userLang || config.defaultLang)) ||
@@ -37,19 +42,6 @@
       document.documentElement.getAttribute('lang') ||
       navigator.language ||
       'en-GB'
-    );
-  }
-
-  function isChatContext() {
-    var path = normalizePath(window.location.pathname || '/');
-
-    if (path === '/chats') return false;
-
-    return !!(
-      document.querySelector('#cp-chat-root .cp-header') ||
-      document.querySelector('[component="chat/messages"]') ||
-      /^\/user\/[^/]+\/chats(?:\/.*)?$/.test(path) ||
-      /^\/chats\/[^/]+/.test(path)
     );
   }
 
@@ -171,17 +163,20 @@
     return scriptPromise;
   }
 
-  function maybeLoadRuntime() {
-    return loadConfig().then(function (cfg) {
-      if (!cfg.enabled) return;
+  function tick() {
+    if (isAdminPage()) return;
 
-      if (!isChatContext()) {
-        if (window.CPHarmonyCall && window.CPHarmonyCall.destroy && !window.CPHarmonyCall.isActive()) {
+    return loadConfig().then(function (cfg) {
+      if (!cfg.enabled) {
+        if (window.CPHarmonyCall && window.CPHarmonyCall.destroy) {
           window.CPHarmonyCall.destroy();
         }
         return;
       }
 
+      // Load the lightweight call runtime on normal frontend pages. The runtime itself
+      // waits for the chat panel/header before injecting the button, so it also works
+      // when the chat UI is mounted after NodeBB ajaxify or after the CP chat engine boots.
       return loadRuntime(cfg).then(function () {
         if (window.CPHarmonyCall && window.CPHarmonyCall.refresh) {
           window.CPHarmonyCall.refresh();
@@ -192,14 +187,14 @@
 
   function schedule() {
     clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(maybeLoadRuntime, 120);
+    refreshTimer = setTimeout(tick, 120);
   }
 
   function startObserver() {
     if (observer || !document.body || !window.MutationObserver) return;
 
     observer = new MutationObserver(function () {
-      if (isChatContext()) schedule();
+      schedule();
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
@@ -207,17 +202,17 @@
 
   if (window.jQuery) {
     window.jQuery(function () {
-      maybeLoadRuntime();
+      tick();
       startObserver();
     });
     window.jQuery(window).on('action:ajaxify.end action:chat.loaded action:chat.switched', schedule);
   } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
-      maybeLoadRuntime();
+      tick();
       startObserver();
     });
   } else {
-    maybeLoadRuntime();
+    tick();
     startObserver();
   }
 }());
