@@ -1,27 +1,20 @@
 {
   "id": "nodebb-plugin-cp-harmony-call",
   "name": "CP Harmony Call",
-  "description": "Audio and video calls for CP Chat Harmony, using PeerJS/WebRTC media and Wukong IM text signaling.",
+  "description": "Adds audio/video call controls to the CP Harmony chat window.",
   "url": "https://github.com/Hurt6465-ai/nodebb-plugin-cp-harmony-call",
   "library": "./library.js",
-  "hooks": [
-    { "hook": "static:app.load", "method": "init" },
-    { "hook": "static:api.routes", "method": "addRoutes" },
-    { "hook": "filter:admin.header.build", "method": "addAdminNavigation" }
-  ],
   "staticDirs": {
-    "public": "./public"
+    "public": "public"
   },
   "scripts": [
-    "public/src/client.js"
+    "public/src/call.js"
   ],
-  "acpScripts": [
-    "public/src/admin.js"
-  ],
-  "modules": {
-    "../admin/plugins/cp-harmony-call.js": "./public/src/admin.js"
-  },
-  "templates": "templates",
   "languages": "languages",
-  "defaultLang": "en-GB"
+  "hooks": [
+    {
+      "hook": "static:app.load",
+      "method": "init"
+    }
+  ]
 }
