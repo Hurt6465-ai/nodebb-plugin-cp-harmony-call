@@ -2,7 +2,7 @@
 
 (function () {
   var PLUGIN_ID = 'nodebb-plugin-cp-harmony-call';
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var root = window.CPHarmonyCallPlugin = window.CPHarmonyCallPlugin || {};
 
   if (root.loaderStarted) return;
@@ -11,6 +11,7 @@
   var configPromise = null;
   var scriptPromise = null;
   var refreshTimer = null;
+  var observer = null;
 
   function relativePath() {
     return (window.config && window.config.relative_path) || '';
@@ -26,18 +27,29 @@
 
     if (path.charAt(0) !== '/') path = '/' + path;
     if (path.length > 1) path = path.replace(/\/+$/, '');
-
     return path || '/';
+  }
+
+  function getUserLang() {
+    return String(
+      (window.config && (config.userLang || config.defaultLang)) ||
+      (window.app && app.user && (app.user.userLang || app.user.lang || app.user.language)) ||
+      document.documentElement.getAttribute('lang') ||
+      navigator.language ||
+      'en-GB'
+    );
   }
 
   function isChatContext() {
     var path = normalizePath(window.location.pathname || '/');
 
+    if (path === '/chats') return false;
+
     return !!(
       document.querySelector('#cp-chat-root .cp-header') ||
       document.querySelector('[component="chat/messages"]') ||
-      (path.indexOf('/chats') === 0 && document.querySelector('[component^="chat/"]')) ||
-      /^\/user\/[^/]+\/chats(?:\/.*)?$/.test(path)
+      /^\/user\/[^/]+\/chats(?:\/.*)?$/.test(path) ||
+      /^\/chats\/[^/]+/.test(path)
     );
   }
 
@@ -59,7 +71,8 @@
       showButton: true,
       autoConnectWukong: true,
       peerOptions: {},
-      iceServers: null
+      iceServers: null,
+      labels: {}
     };
   }
 
@@ -69,10 +82,12 @@
     }
   }
 
-  function loadConfig() {
-    if (configPromise) return configPromise;
+  function loadConfig(force) {
+    if (configPromise && !force) return configPromise;
 
-    configPromise = fetch(relativePath() + '/api/plugins/cp-harmony-call/config', {
+    var url = relativePath() + '/api/plugins/cp-harmony-call/config?lang=' + encodeURIComponent(getUserLang());
+
+    configPromise = fetch(url, {
       credentials: 'same-origin',
       headers: { accept: 'application/json' }
     })
@@ -121,9 +136,19 @@
     });
   }
 
-  function loadRuntime(cfg) {
-    if (window.CPHarmonyCall && window.CPHarmonyCall.boot) {
+  function updateRuntimeConfig(cfg) {
+    window.CPHarmonyCallConfig = Object.assign({}, cfg || {});
+    if (window.CPHarmonyCall && window.CPHarmonyCall.setConfig) {
+      window.CPHarmonyCall.setConfig(cfg || {});
+    } else if (window.CPHarmonyCall) {
       window.CPHarmonyCall.config = Object.assign(window.CPHarmonyCall.config || {}, cfg || {});
+    }
+  }
+
+  function loadRuntime(cfg) {
+    updateRuntimeConfig(cfg);
+
+    if (window.CPHarmonyCall && window.CPHarmonyCall.boot) {
       window.CPHarmonyCall.boot();
       return Promise.resolve();
     }
@@ -133,8 +158,8 @@
     var base = relativePath() + (cfg.assetBase || ('/plugins/' + PLUGIN_ID + '/public'));
     var src = base + '/src/call.js?v=' + encodeURIComponent(VERSION);
 
-    window.CPHarmonyCallConfig = Object.assign({}, cfg || {});
     scriptPromise = loadScript(src).then(function () {
+      updateRuntimeConfig(cfg);
       if (window.CPHarmonyCall && window.CPHarmonyCall.boot) {
         window.CPHarmonyCall.boot();
       }
@@ -170,24 +195,29 @@
     refreshTimer = setTimeout(maybeLoadRuntime, 120);
   }
 
-  if (window.jQuery) {
-    window.jQuery(maybeLoadRuntime);
-    window.jQuery(window).on('action:ajaxify.end action:chat.loaded action:chat.switched', schedule);
-  } else if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', maybeLoadRuntime);
-  } else {
-    maybeLoadRuntime();
+  function startObserver() {
+    if (observer || !document.body || !window.MutationObserver) return;
+
+    observer = new MutationObserver(function () {
+      if (isChatContext()) schedule();
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
-  var observer = new MutationObserver(function () {
-    if (isChatContext()) schedule();
-  });
-
-  if (document.body) {
-    observer.observe(document.body, { childList: true, subtree: true });
-  } else {
-    document.addEventListener('DOMContentLoaded', function () {
-      if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+  if (window.jQuery) {
+    window.jQuery(function () {
+      maybeLoadRuntime();
+      startObserver();
     });
+    window.jQuery(window).on('action:ajaxify.end action:chat.loaded action:chat.switched', schedule);
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      maybeLoadRuntime();
+      startObserver();
+    });
+  } else {
+    maybeLoadRuntime();
+    startObserver();
   }
 }());
